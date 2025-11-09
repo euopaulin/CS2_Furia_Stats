@@ -1,0 +1,30 @@
+version: 0.2
+
+# Variáveis que serão preenchidas pela AWS
+# Estas variáveis serão definidas nas configurações do projeto CodeBuild
+phases:
+  pre_build:
+    commands:
+      # Comando para fazer login no repositório ECR
+      - echo Logando no Amazon ECR...
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+      - REPOSITORY_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME
+  build:
+    commands:
+      # 1. Constrói a imagem Docker a partir do Dockerfile
+      - echo Construindo a imagem Docker...
+      - docker build -t $IMAGE_REPO_NAME:$CODEBUILD_RESOLVED_SOURCE_VERSION .
+      - docker tag $IMAGE_REPO_NAME:$CODEBUILD_RESOLVED_SOURCE_VERSION $REPOSITORY_URI:$CODEBUILD_RESOLVED_SOURCE_VERSION
+      - docker tag $IMAGE_REPO_NAME:$CODEBUILD_RESOLVED_SOURCE_VERSION $REPOSITORY_URI:latest
+  post_build:
+    commands:
+      # 2. Envia a imagem para o ECR
+      - echo Enviando a imagem Docker para o ECR...
+      - docker push $REPOSITORY_URI:$CODEBUILD_RESOLVED_SOURCE_VERSION
+      - docker push $REPOSITORY_URI:latest
+      # 3. Cria um arquivo de definições de imagem (para o CodePipeline usar no deploy)
+      - echo Escrevendo o arquivo image definitions...
+      - printf '[{"name":"container-thewitcher3","imageUri":"%s"}]' $REPOSITORY_URI:$CODEBUILD_RESOLVED_SOURCE_VERSION > imagedefinitions.json
+artifacts:
+  files:
+    - imagedefinitions.json
